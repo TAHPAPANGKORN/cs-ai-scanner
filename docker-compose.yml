@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  ai-scanner-api:
+    build: .
+    container_name: cs_ai_scanner
+    restart: always
+    ports:
+      - "1234:1234"
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    volumes:
+      - /var/log/nginx/cs_ssl_access.log:/var/log/nginx/cs_ssl_access.log:ro
+      - ./data:/app/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

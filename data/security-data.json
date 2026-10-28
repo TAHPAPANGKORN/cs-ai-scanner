@@ -1,0 +1,55 @@
+{
+    "threat_level": "LOW",
+    "total_requests": 215,
+    "ai_summary": "ผู้เยี่ยมชมส่งรูปภาพ 4 ภาพ",
+    "detected_attacks": [],
+    "last_updated": "2026-10-28 03:14:27",
+    "charts": {
+        "traffic_by_country": {
+            "labels": [
+                "TH",
+                "SG",
+                "JP",
+                "HK",
+                "US"
+            ],
+            "data": [
+                204,
+                6,
+                2,
+                2,
+                1
+            ]
+        },
+        "top_ips": {
+            "labels": [
+                "223.204.121.234",
+                "172.68.164.99",
+                "104.22.147.163",
+                "104.22.147.173",
+                "104.22.147.154"
+            ],
+            "data": [
+                139,
+                1,
+                2,
+                4,
+                11
+            ]
+        },
+        "traffic_by_device": {
+            "labels": [
+                "Bot/Script",
+                "Desktop",
+                "Other",
+                "Mobile"
+            ],
+            "data": [
+                8,
+                195,
+                7,
+                5
+            ]
+        }
+    }
+}
