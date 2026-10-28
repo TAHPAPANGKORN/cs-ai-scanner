@@ -2,3 +2,5 @@ fastapi
 uvicorn
 requests
 schedule
+google-genai
+python-dotenv
