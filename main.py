@@ -173,35 +173,17 @@ Output strictly valid JSON with this exact schema:
 """
 
     # รายชื่อโมเดลที่ทดสอบแล้วว่าตอบกลับได้เร็วและเสถียร (Auto-failover)
-    candidate_models = [model_name]
-    for m in ["gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-3.8-flash"]:
-        if m not in candidate_models:
-            candidate_models.append(m)
+    candidate_models = ["gemini-3.1-flash-lite", "gemini-3.5-flash", "gemini-3.8-flash"]
+    if model_name in candidate_models:
+        candidate_models.remove(model_name)
+        candidate_models.insert(0, model_name)
+    elif model_name:
+        candidate_models.insert(0, model_name)
 
     for current_model in candidate_models:
         print(f"[{datetime.now()}] Attempting Gemini analysis with model: {current_model}")
         
-        # 1. ลองผ่าน google-genai SDK
-        try:
-            from google import genai
-            from google.genai import types
-            
-            client = genai.Client(api_key=api_key)
-            response = client.models.generate_content(
-                model=current_model,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    temperature=0.2,
-                )
-            )
-            if response.text:
-                return json.loads(response.text)
-        except Exception as sdk_err:
-            err_str = str(sdk_err)
-            print(f"[{datetime.now()}] Gemini SDK ({current_model}) error: {err_str[:120]}")
-
-        # 2. ลองผ่าน REST API Fallback
+        # เรียกผ่าน REST API โดยตรงพร้อมกำหนด Socket Timeout อย่างเข้มงวด เพื่อป้องกันไม่ให้ Thread ค้าง
         try:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{current_model}:generateContent?key={api_key}"
             headers = {"Content-Type": "application/json"}
@@ -212,15 +194,17 @@ Output strictly valid JSON with this exact schema:
                     "temperature": 0.2
                 }
             }
-            res = requests.post(url, headers=headers, json=payload, timeout=10)
+            res = requests.post(url, headers=headers, json=payload, timeout=20)
             if res.status_code == 200:
                 data = res.json()
                 text_content = data['candidates'][0]['content']['parts'][0]['text']
-                return json.loads(text_content)
+                parsed_json = json.loads(text_content)
+                print(f"[{datetime.now()}] Gemini analysis successfully completed with model: {current_model}")
+                return parsed_json
             else:
-                print(f"[{datetime.now()}] Gemini REST ({current_model}) Status {res.status_code}: {res.text[:120]}")
-        except Exception as rest_err:
-            print(f"[{datetime.now()}] Gemini REST ({current_model}) error: {rest_err}")
+                print(f"[{datetime.now()}] Gemini ({current_model}) Status {res.status_code}: {res.text[:120]}")
+        except Exception as api_err:
+            print(f"[{datetime.now()}] Gemini ({current_model}) error: {api_err}")
 
         time.sleep(0.5)
 
