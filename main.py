@@ -25,7 +25,7 @@ app.add_middleware(
 LOG_FILE = os.getenv('LOG_FILE', '/var/log/nginx/cs_ssl_access.log')
 OUTPUT_JSON = os.getenv('OUTPUT_JSON', '/app/data/security-data.json')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '').strip()
-GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-2.5-flash').strip()
+GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-3.8-flash').strip()
 
 # สร้าง Lock ป้องกันไม่ให้ AI ทำงานซ้อนกันหลาย Thread พร้อมกัน
 ai_lock = threading.Lock()
@@ -118,7 +118,7 @@ def parse_nginx_log_line(line: str) -> dict:
 def analyze_with_gemini(parsed_logs: list, suspicious_logs: list, stats_summary: dict) -> dict:
     """เรียกใช้ Google Gemini API เพื่อวิเคราะห์พฤติกรรมความปลอดภัยและภัยคุกคามจริง"""
     api_key = os.getenv('GEMINI_API_KEY', '').strip()
-    model_name = os.getenv('GEMINI_MODEL', 'gemini-2.5-flash').strip()
+    model_name = os.getenv('GEMINI_MODEL', 'gemini-3.8-flash').strip()
 
     if not api_key:
         print(f"[{datetime.now()}] Warning: GEMINI_API_KEY not set. Using heuristic fallback.")
@@ -275,18 +275,31 @@ def run_ai_scanner():
         "charts": {
             "traffic_by_country": {"labels": [], "data": []},
             "top_ips": {"labels": [], "data": []},
-            "traffic_by_device": {"labels": [], "data": []}
         }
     }
 
     try:
-        if not os.path.exists(LOG_FILE):
-            print(f"[{datetime.now()}] Error: Log file not found at {LOG_FILE}")
-            result["ai_summary"] = f"ไม่พบไฟล์ Log ที่ตำแหน่ง {LOG_FILE}"
-            return result
+        target_log_file = LOG_FILE
+        # ตรวจสอบกรณี path ไม่มีอยู่จริง หรือ Docker เมานต์เป็นโฟลเดอร์แทนไฟล์
+        if not os.path.exists(target_log_file) or os.path.isdir(target_log_file):
+            fallback_candidates = [
+                '/app/data/mock_access.log',
+                os.path.join(os.path.dirname(OUTPUT_JSON), 'mock_access.log'),
+                './data/mock_access.log'
+            ]
+            found_fallback = next((cand for cand in fallback_candidates if os.path.isfile(cand)), None)
+            
+            if found_fallback:
+                print(f"[{datetime.now()}] Notice: {target_log_file} is a directory or missing. Auto-fallback to: {found_fallback}")
+                target_log_file = found_fallback
+            else:
+                err_msg = f"ไม่พบไฟล์ Log หรือตำแหน่ง {target_log_file} เป็นโฟลเดอร์ (แนะนำให้ใช้ ./data/mock_access.log สำหรับ Local)"
+                print(f"[{datetime.now()}] Error: {err_msg}")
+                result["ai_summary"] = err_msg
+                return result
 
         # 1. อ่านไฟล์ Log ทั้งหมด
-        with open(LOG_FILE, 'r', encoding='utf-8', errors='ignore') as f:
+        with open(target_log_file, 'r', encoding='utf-8', errors='ignore') as f:
             lines = [line.strip() for line in f.readlines() if line.strip()]
 
         if not lines:

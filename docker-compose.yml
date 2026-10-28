@@ -8,7 +8,7 @@ services:
       - .env
     environment:
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
-      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-flash}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3.8-flash}
       - LOG_FILE=${LOG_FILE:-/var/log/nginx/cs_ssl_access.log}
       - OUTPUT_JSON=${OUTPUT_JSON:-/app/data/security-data.json}
     ports:
@@ -17,7 +17,7 @@ services:
       - 8.8.8.8
       - 1.1.1.1
     volumes:
-      - /var/log/nginx/cs_ssl_access.log:/var/log/nginx/cs_ssl_access.log:ro
+      - ${HOST_LOG_PATH:-/var/log/nginx/cs_ssl_access.log}:/var/log/nginx/cs_ssl_access.log:ro
       - ./data:/app/data
     extra_hosts:
       - "host.docker.internal:host-gateway"

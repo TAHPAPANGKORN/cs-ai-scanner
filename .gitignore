@@ -69,3 +69,7 @@ htmlcov/
 
 # Docker overrides & local state
 docker-compose.override.yml
+
+# Data folder (ignore dynamic data and logs, preserve directory via .gitkeep)
+data/*
+!data/.gitkeep
