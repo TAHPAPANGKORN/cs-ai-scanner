@@ -25,7 +25,7 @@ app.add_middleware(
 LOG_FILE = os.getenv('LOG_FILE', '/var/log/nginx/cs_ssl_access.log')
 OUTPUT_JSON = os.getenv('OUTPUT_JSON', '/app/data/security-data.json')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '').strip()
-GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-3.8-flash').strip()
+GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-3.5-flash').strip()
 
 # สร้าง Lock ป้องกันไม่ให้ AI ทำงานซ้อนกันหลาย Thread พร้อมกัน
 ai_lock = threading.Lock()
@@ -118,7 +118,7 @@ def parse_nginx_log_line(line: str) -> dict:
 def analyze_with_gemini(parsed_logs: list, suspicious_logs: list, stats_summary: dict) -> dict:
     """เรียกใช้ Google Gemini API เพื่อวิเคราะห์พฤติกรรมความปลอดภัยและภัยคุกคามจริง"""
     api_key = os.getenv('GEMINI_API_KEY', '').strip()
-    model_name = os.getenv('GEMINI_MODEL', 'gemini-3.8-flash').strip()
+    model_name = os.getenv('GEMINI_MODEL', 'gemini-3.5-flash').strip()
 
     if not api_key:
         print(f"[{datetime.now()}] Warning: GEMINI_API_KEY not set. Using heuristic fallback.")
@@ -172,47 +172,59 @@ Output strictly valid JSON with this exact schema:
 }}
 """
 
-    # เรียกใช้ Google Gemini API
-    # 1. ลองผ่าน google-genai SDK
-    try:
-        from google import genai
-        from google.genai import types
+    # รายชื่อโมเดลที่ทดสอบแล้วว่าตอบกลับได้เร็วและเสถียร (Auto-failover)
+    candidate_models = [model_name]
+    for m in ["gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-3.8-flash"]:
+        if m not in candidate_models:
+            candidate_models.append(m)
+
+    for current_model in candidate_models:
+        print(f"[{datetime.now()}] Attempting Gemini analysis with model: {current_model}")
         
-        client = genai.Client(api_key=api_key)
-        response = client.models.generate_content(
-            model=model_name,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                temperature=0.2,
+        # 1. ลองผ่าน google-genai SDK
+        try:
+            from google import genai
+            from google.genai import types
+            
+            client = genai.Client(api_key=api_key)
+            response = client.models.generate_content(
+                model=current_model,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    temperature=0.2,
+                )
             )
-        )
-        if response.text:
-            return json.loads(response.text)
-    except Exception as sdk_err:
-        print(f"[{datetime.now()}] Gemini SDK call failed ({sdk_err}), trying REST API fallback...")
+            if response.text:
+                return json.loads(response.text)
+        except Exception as sdk_err:
+            err_str = str(sdk_err)
+            print(f"[{datetime.now()}] Gemini SDK ({current_model}) error: {err_str[:120]}")
 
-    # 2. REST API Fallback
-    try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
-        headers = {"Content-Type": "application/json"}
-        payload = {
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {
-                "responseMimeType": "application/json",
-                "temperature": 0.2
+        # 2. ลองผ่าน REST API Fallback
+        try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{current_model}:generateContent?key={api_key}"
+            headers = {"Content-Type": "application/json"}
+            payload = {
+                "contents": [{"parts": [{"text": prompt}]}],
+                "generationConfig": {
+                    "responseMimeType": "application/json",
+                    "temperature": 0.2
+                }
             }
-        }
-        res = requests.post(url, headers=headers, json=payload, timeout=30)
-        if res.status_code == 200:
-            data = res.json()
-            text_content = data['candidates'][0]['content']['parts'][0]['text']
-            return json.loads(text_content)
-        else:
-            print(f"[{datetime.now()}] Gemini REST Error {res.status_code}: {res.text}")
-    except Exception as rest_err:
-        print(f"[{datetime.now()}] Gemini REST API error: {rest_err}")
+            res = requests.post(url, headers=headers, json=payload, timeout=10)
+            if res.status_code == 200:
+                data = res.json()
+                text_content = data['candidates'][0]['content']['parts'][0]['text']
+                return json.loads(text_content)
+            else:
+                print(f"[{datetime.now()}] Gemini REST ({current_model}) Status {res.status_code}: {res.text[:120]}")
+        except Exception as rest_err:
+            print(f"[{datetime.now()}] Gemini REST ({current_model}) error: {rest_err}")
 
+        time.sleep(0.5)
+
+    print(f"[{datetime.now()}] All Gemini models failed or timed out. Falling back to Heuristic rules.")
     return fallback_heuristic_analysis(suspicious_logs, stats_summary)
 
 def fallback_heuristic_analysis(suspicious_logs: list, stats_summary: dict) -> dict:
